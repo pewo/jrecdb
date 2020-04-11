@@ -7,7 +7,6 @@ use lib $FindBin::Bin;
 use Jrecdb;
 
 my(%defaults) = (
-	ansible => "/root/unix-env",
 	client => undef,
 	debug => 0,
 	ignoredone => 1,

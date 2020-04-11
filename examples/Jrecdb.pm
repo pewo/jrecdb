@@ -56,6 +56,7 @@ use File::Copy;
 use File::Basename;
 use File::Temp;
 use Getopt::Long;
+use JSON;
 
 our $VERSION = 'v0.0.1';
 our @ISA = qw(Object);
@@ -73,8 +74,6 @@ sub new {
 	my(%defaults) = ( 
 		jobtype		=> $jobtype,
 		ansible		=> "ansible-playbook",
-		playbook	=> $jobtype . ".yml",
-		tag		=> undef,
 		jobdir		=> "/var/tmp/job.d",
 		tmpdir		=> "/tmp/job.d",
 		ignoredone	=> 0,
@@ -195,10 +194,7 @@ sub dojob() {
 	close($inv);
 
 	my($ansible) = $self->get("ansible");
-	my($playbook) = $self->get("playbook");
-	my($tag) = $self->get("tag");
-	my($cmd) = "$ansible $playbook -i $inventory";
-	$cmd .= " -t $tag" if ( defined($tag) );
+	my($cmd) = "$ansible -i $inventory";
 
 	if ( $fh ) {
 		print $fh "\nCommand:\n";
@@ -282,9 +278,9 @@ sub getjob() {
 		$client = "*";
 	}
 
-	$self->debug(1,"Searching for jobs: $jobdir/cmd.$client.$jobtype");
+	$self->debug(1,"Searching for jobs: $jobdir/client.$client.$jobtype.cmd");
 	my($job);
-	foreach $job ( <$jobdir/cmd.$client.$jobtype> ) {
+	foreach $job ( <$jobdir/client.$client.$jobtype.cmd> ) {
 		$self->debug(1,"job: $job");
 
 		my($done) = $donedir . "/" . basename($job);
@@ -299,12 +295,18 @@ sub getjob() {
 	
 		my(%job) = ();
 		if ( open(my $fh,"<",$job) ) {
-			foreach ( <$fh> ) {
-				chomp;
-				my($cmd,$arg) = split(/=/,$_);
-				$job{$cmd}=$arg;
-			}
+			my $line;
+			$line = <$fh>;
 			close($fh);
+			next unless ( defined($line) );
+			my $json = JSON->new->allow_nonref;
+			my $perl_scalar = $json->decode( $line );
+			next unless ( defined($perl_scalar) );
+
+			foreach ( sort keys %$perl_scalar ) {
+				$job{$_} = $perl_scalar->{$_};
+				$self->debug(1,"Setting key [$_] to [$perl_scalar->{$_}]");
+			}
 			$self->debug(1,"move($job, $done)");
 			move($job,$done);
 		}
@@ -343,10 +345,11 @@ sub getopt {
         	"client=s" => \$defaults->{client},
         	"debug:i"  => \$localdebug,
         	"ignoredone" => \$defaults->{ignoredone},
-        	"playbook=s" => \$defaults->{playbook},
-        	"tag=s" => \$defaults->{tag},
 	) or die("Error in command line arguments\n");
 
+	if ( ! defined($defaults->{ansible}) ) {
+		$defaults->{ansible} = $0 . ".sh";
+	}
 	if ( defined($localdebug) ) {
         	if ( $localdebug < 1 ) {
 	                $localdebug++;
