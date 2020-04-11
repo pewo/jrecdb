@@ -5,8 +5,8 @@ RUN chown nginx:nginx /etc/init.d/fcgiwrap
 ADD ./vhost.conf /etc/nginx/conf.d/default.conf
 RUN mkdir /var/www
 COPY custom_403.html /var/www
-COPY webcmd.crt /etc/nginx/
-COPY webcmd.key /etc/nginx/
+COPY jrecdb.crt /etc/nginx/
+COPY jrecdb.key /etc/nginx/
 COPY db.pl /var/www/dbread
 COPY db.pl /var/www/dbwrite
 COPY db.pl /var/www/digest
