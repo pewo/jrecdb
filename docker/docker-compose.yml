@@ -1,0 +1,10 @@
+version: '3'
+services:
+    jrecdb:
+        container_name: jrecdb
+        build:
+            context: .
+        image: jrecdb:latest
+            
+        ports:
+            - "4443:443"
