@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 RemainAfterExit=true
-ExecStart=-/usr/bin/wget -O /dev/null -o /dev/null  --quiet 'http://127.0.0.1:8080/logger.pl&command=autopostinstall'
+ExecStart=-/usr/bin/wget --no-check-certificate -O /dev/null -o /dev/null --quiet 'https://127.0.0.1:4443/dbwrite&command=autopostinstall'
 
 [Install]
 WantedBy=multi-user.target

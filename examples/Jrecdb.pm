@@ -46,7 +46,7 @@ sub new {
 
 
 
-package Webcmd;
+package Jrecdb;
 
 use strict;
 use Carp;
@@ -80,14 +80,14 @@ sub new {
 		ignoredone	=> 0,
 		debug		=> $debug,
 	);
-        my(%hash) = ( %defaults, @_) ;
+	my(%hash) = ( %defaults, @_) ;
 	$self->set("debug",$hash{debug});
-        while ( my($key,$val) = each(%hash) ) {
+	while ( my($key,$val) = each(%hash) ) {
 		my($textval) = $val;
 		$textval = "undef" unless ( $val );
 		$self->debug(1,"setting $key=[$textval]");
-                $self->set($key,$val);
-        }
+		$self->set($key,$val);
+	}
 
 	{
 		my($value);

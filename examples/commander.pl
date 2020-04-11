@@ -6,15 +6,19 @@ use Data::Dumper;
 use URI;
 use Getopt::Long;
 use File::Path qw(make_path);
+use JSON;
 
-my($url) = 'http://smurf.xname.se:8080/logger.pl?command=list';
+use LWP::UserAgent;
+use IO::Socket::SSL;
+
+my($url) = undef;
 my($jobdir) = "/var/tmp/job.d";
-my($debug) = 0;
+my($debug) = 1;
 
 GetOptions (
 	"url=s" => \$url,    
 	"jobdir=s"   => \$jobdir,
-        "debug"  => \$debug
+   "debug"  => \$debug
 ) or die("Error in command line arguments\n");
 
 my($usage) = "Usage: $0 --url=<url> --jobdir=<directory> --debug\n";
@@ -26,62 +30,53 @@ unless ( $jobdir ) {
 	die "Missing jobdir\n$usage\n";
 }
 
-#get("http://smurf.xname.se:8080/webcmd/postinstall");
 
-my($content) = get($url);
-
-#
-#REC=1 FILE=/tmp/webcmd/webcmd.G9XCG.log DATA=command=autopostinstall;ignoredone=1;client=172.18.0.1;host=172.18.0.1;time=1586091378
-#REC=2 FILE=/tmp/webcmd/webcmd.OHh8Y.log DATA=command=autoprodinstall;ignoredone=1;client=31.209.59.5;host=31.209.59.5;time=1586091399
-#
+$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME} = 0;
+my $bot = LWP::UserAgent->new( 
+    env_proxy => 1, 
+    keep_alive => 1, 
+    timeout => 300, 
+    ssl_opts => { 
+        verify_hostname => 0, 
+        SSL_verify_mode => IO::Socket::SSL::SSL_VERIFY_NONE 
+    },
+); 
+my $response = $bot->get($url);
+unless ($response->is_success) {
+	die $response->status_line;
+}
+    
+my($content) = $response->decoded_content();
+unless ( $content ) {
+	print "Nothing to do, exiting...\n";
+	exit(0);
+}
 
 my($line);
 my($added) = 0;
 foreach $line ( split(/\n|\r/,$content ) ) {
 	next unless ( $line );
-	next unless ( $line =~ /^REC=\d/ );
+	next unless ( $line =~ /record/ );
 	chomp($line);
 
 	print "Parsing $line\n";
+	my $json = JSON->new->allow_nonref;
+	my $perl_scalar = $json->decode( $line );
+	next unless ( defined($perl_scalar) );
+	print "JSON: " . Dumper(\$perl_scalar) . "\n" if ( $debug );
 
-	#
-	# get everythin after DATA=
-	# Before:
-	#REC=1 FILE=/tmp/webcmd/webcmd.G9XCG.log DATA=command=autopostinstall;ignoredone=1;client=172.18.0.1;host=172.18.0.1;time=1586091378
-	# $data = command=autopostinstall;ignoredone=1;client=172.18.0.1;host=172.18.0.1;time=1586091378
-	#
-	my($data) = undef;
-	if ( $line =~ /DATA=(.*)/ ) {
-		$data = $1;
-	}
-	next unless ( $data );
-	print "data:$data\n" if ( $debug );
-
-	#
-	# split data to get a key/value hash
-	#
-	my(%args) = ();
-	my($arg);
-	foreach $arg ( split(/;/,$data) ) {
-		next unless ( defined($arg) );
-		next unless ( $arg =~ /=/ );
-		my($key,$value) = split(/=/,$arg);
-		next unless ( defined($key) );
-		next unless ( defined($value) );
-		$args{lc($key)}=lc($value);
-	}
 	
-	my($client) = $args{client};
+	my($client) = $perl_scalar->{client};
 	next unless ( defined($client) );
 	next unless ( $client =~ /^\d+\.\d+\.\d+\.\d+$/ );
 	print "client:$client\n" if ( $debug );
 
-	my($command) = $args{command};
+	my($command) = $perl_scalar->{command};
 	next unless ( defined($command) );
 	next unless ( $command =~ /^\w+$/ );
 	print "command:$command\n" if ( $debug );
 
-	my($time) = $args{time};
+	my($time) = $perl_scalar->{time};
 	next unless ( defined($time) );
 	next unless ( $time =~ /^\d+$/ );
 	print "time:$time\n" if ( $debug );
@@ -103,16 +98,16 @@ foreach $line ( split(/\n|\r/,$content ) ) {
 	}
 
 	unlink($jobfile);
-	delete($args{client});
-	delete($args{command});
-	delete($args{time});
+	delete($perl_scalar->{client});
+	delete($perl_scalar->{command});
+	delete($perl_scalar->{time});
 	if ( open(my $fh,">>",$jobfile) ) {
 		print $fh "client=$client\n";
 		print $fh "command=$command\n";
 		print $fh "time=$time\n";
 		print $fh "now=" . time . "\n";
-		foreach ( sort keys %args ) {
-			print $fh "arg_$_=$args{$_}\n";
+		foreach ( sort keys %$perl_scalar ) {
+			print $fh "arg_$_=$perl_scalar->{$_}\n";
 		}
 		close($fh);
 	}

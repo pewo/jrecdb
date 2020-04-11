@@ -4,19 +4,17 @@ use strict;
 
 use FindBin;
 use lib $FindBin::Bin;
-use Webcmd;
+use Jrecdb;
 
 my(%defaults) = (
 	ansible => "/root/unix-env",
 	client => undef,
 	debug => 0,
 	ignoredone => 1,
-	playbook => undef,
-	tag => undef,
 );
 
-my(%args) = Webcmd::getopt(\%defaults);
+my(%args) = Jrecdb::getopt(\%defaults);
 
-my($webcmd) = new Webcmd( %args );
+my($job) = new Jrecdb( %args );
 
-$webcmd->doit();
+$job->doit();
