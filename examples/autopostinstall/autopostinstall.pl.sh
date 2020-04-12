@@ -15,7 +15,7 @@ for playbook in postinstall.yml site.yml prodinstall.yml; do
 	if [ ! -z ${JRECDB_CLIENT} ]; then
 		ANSIBLE_PLAYBOOK="$ANSIBLE_PLAYBOOK -l $JRECDB_CLIENT"
 	fi
-	echo "Ansible run: $ANSIBLE_PLAYBOOK"
+	echo $ANSIBLE_PLAYBOOK 
 done
 
 echo "Done $0"

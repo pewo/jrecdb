@@ -145,9 +145,6 @@ sub dojob() {
 	my($self) = shift;
 	my($job) = shift;
 
-	print Dumper($self);
-	print Dumper($job);
-	
 	my($client) = $job->{"client"};
 	return(undef) unless ( defined($client) );
 
