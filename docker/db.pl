@@ -19,6 +19,7 @@ use JSON;
 use CGI;
 use Digest::SHA qw(sha1_hex);
 use Digest::MD5 qw(md5_hex);
+use Data::Dumper;
 
 my(@encryption_methods) = ( "sha1", "md5" );
 
@@ -144,112 +145,116 @@ sub cgi() {
 			next if ( $file eq "." or $file eq ".." );
 			if ( $file =~ /(^$template\.\w+\.$extension)/ ) {
 				push(@files,$tempdir . "/" . $1);
+				debug("Adding $file to readers digest");
 			}
 		}
 		closedir $dh;
 
 
 
+		my(@delete) = ();
 		foreach ( @files ) {
 			my $json = JSON->new->allow_nonref;
+			debug("Trying to read file $_");
 			$rec++;
-			if ( open(IN,"<$_") ) {
-				my($line);
-				$line = <IN>;
-				close(IN);
-				chomp($line);
-				my($perl_scalar);
-				$perl_scalar = $json->decode( $line );
-				if ( defined($perl_scalar) ) {
-					my($key);
-					my($send) = 0;
-					#
-					# Loop over argument and match in saved file
-					# if we dont find, let the file be...
-					#
-					foreach $key ( keys %names ) {
-						next unless ( defined($key) );
-						my($val) = $names{$key};
-						next unless ( defined($val) );
-						my($comp) = $perl_scalar->{$key};
-						unless ( defined($comp) ) {
-							$send = 0;
-							last;
-						}
-						if ( lc($val) eq lc($comp) ) {
-							$send = 1;
-						}
-						else {
-							$send = 0;
-							last;
-						}
-					}
+			unless ( open(IN,"<",$_) ) {
+				print "Reading $_: $!\n";
+				debug("Reading $_: $!");
+				next;
+			}
 
-					#
-					# Check for required clear text passwords
-					# 
-					foreach $key ( "secret","password" ) {
-						my($val) = $perl_scalar->{$key};
-						next unless ( defined($val) );
+			my($line);
+			$line = <IN>;
+			close(IN);
+			chomp($line);
+			debug("date=[" . $line . "]");
+			my($perl_scalar);
+			$perl_scalar = $json->decode( $line );
+			next unless ( defined($perl_scalar) );
 
-						my($comp) = $names{$key};
-						unless ( defined($comp) ) {
-							$send = 0;
-							last;
-						}
+			my($key);
+			my($send) = 0;
+			my(%required) = ( "secret" => 1, "password" => 1, "md5" => 1, "sha1" => 1 );
+			#
+			# Loop over argument and match in saved file
+			# if we dont find, let the file be...
+			#
+			foreach $key ( keys %names ) {
+				next unless ( defined($key) );
+				debug("key: $key");
 
-						if ( lc($val) eq lc($comp) ) {
-							$send = 1;
-						}
-						else {
-							$send = 0;
-							last;
-						}
-					}
-
-					#
-					# Check for required encrypted password
-					#
-					foreach $key ( "sha1", "md5" ) {
-						my($val) = $perl_scalar->{$key};
-						next unless ( defined($val) );
-
-						my($comp) = $names{$key};
-						unless ( defined($comp) ) {
-							$send = 0;
-							last;
-						}
-
-						my($digest) = undef;
-						if ( $key eq "sha1" ) {
-							$digest = sha1_hex($comp);
-						}
-						elsif ( $key eq "md5" ) {
-							$digest = md5_hex($comp);
-						}
-						if ( $val eq $digest ) {
-							$send = 1;
-						}
-						else {
-							$send = 0;
-							last;
-						}
-					}
-
-					unless ( $send ) {
-						#
-						# skipping removing file, since we dont need this file...
-						#
-						debug("skipping send...");
-					}
-					next unless ( $send );
-					
-					$perl_scalar->{record}=$rec;
-					my($json_text);
-					$json_text   = $json->encode( $perl_scalar );
-					print $json_text . "\n";
+				if ( defined($required{$key}) ) {
+					debug("key $key is a required key, checking it later");
+					next;
+				}
+				my($val) = $names{$key};
+				next unless ( defined($val) );
+				debug("val: $val");
+				my($comp) = $perl_scalar->{$key};
+				unless ( defined($comp) ) {
+					$send = 0;
+					debug("nothing to compare with send=$send");
+					last;
+				}
+				debug("comp $comp");
+				if ( lc($val) eq lc($comp) ) {
+					$send = 1;
+					debug("$comp and $val is equial send=$send");
+				}
+				else {
+					$send = 0;
+					debug("$comp and $val is NOT equial send=$send");
+					last;
 				}
 			}
+			# no keys found
+			next unless ( $send ); 
+
+			#
+			# Check for required clear text and encrypted passwords
+			# 
+			foreach $key ( sort keys %required ) {
+				my($val) = $perl_scalar->{$key};
+				next unless ( defined($val) );
+				debug("$key is defined to $val");
+
+				my($comp) = $names{$key};
+				unless ( defined($comp) ) {
+					$send = 0;
+					debug("nothing to compare with send=$send");
+					last;
+				}
+
+				my($digest) = undef;
+				if ( $key eq "sha1" ) {
+					$digest = sha1_hex($comp);
+					debug("digest(sha1) = $digest");
+				}
+				elsif ( $key eq "md5" ) {
+					$digest = md5_hex($comp);
+					debug("digest(md5) = $digest");
+				}
+				else {
+					$digest = $comp;
+					debug("digest(plain) = $digest");
+				}
+
+				if ( $val eq $digest ) {
+					$send = 1;
+					debug("$digest and $val is equial send=$send");
+				}
+				else {
+					$send = 0;
+					debug("$digest and $val is NOT equial send=$send");
+					last;
+				}
+			}
+			next unless ( $send );
+
+			$perl_scalar->{record}=$rec;
+			my($json_text);
+			$json_text   = $json->encode( $perl_scalar );
+			print $json_text . "\n";
 
 			if ( $reserved{remove} ) {
 				debug("removing file $_");
