@@ -18,7 +18,7 @@ use Jrecdb;
 
 my(%defaults) = (
    logdir => "/tmp/loggy.d/autopostinstall/2020/04/12",
-	url => 'https://smurf.xname.se:4443/dbread?jobtype=autopostinstall&sha1=bepa',
+	url => 'https://smurf.xname.se:4443/dbread?jobtype=autopostinstall',
 );
 
 my(%args) = Jrecdb::getopt(\%defaults);

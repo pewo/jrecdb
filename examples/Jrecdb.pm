@@ -132,8 +132,12 @@ sub doit() {
 	my($self) = shift;
 
 	my($job);
+	my($run) = 0;
 	foreach $job ( $self->collect() ) {
+		$run++;
+		$self->debug(1,"Job number $run is starting");
 		$self->dojob($job);
+		$self->debug(1,"Job number $run is done");
 	}
 }
 
@@ -279,7 +283,6 @@ sub dojob() {
 		print $log "\nDone $0 at " . localtime(time) . "\n";
 		close($log);
 	}
-	exit(0);
 }
 
 sub getopt {
