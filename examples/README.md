@@ -31,9 +31,14 @@ Execute the autopostinstall.pl script. This script will try to download the data
 The entry above is password protected by sha1, so the autopostinstall.pl has to have the cleartext version of the sha1.
 The cleartext of the sha1 "0c0e8f420a05d1d5cf8200833d6ae4bb5761081c" is "mmGynTGXHa99SDUg"
 
+
 The url in the autopostinstall.pl is 'https://"dockerhost-ip-address":4443/dbread?jobtype=autopostinstall&remove=1&sha1=mmGynTGXHa99SDUg'
 
 
 The jobtype is the same as in the service file "autopostinstall"
 
+## Detailed output
+autopostinstall.pl --debug
+
+This will give you more logs then you wants
 
