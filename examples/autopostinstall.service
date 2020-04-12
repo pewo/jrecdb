@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 RemainAfterExit=true
-ExecStart=-/usr/bin/wget --no-check-certificate -O /dev/null -o /dev/null --quiet 'https://127.0.0.1:4443/dbwrite&command=autopostinstall'
+ExecStart=-/usr/bin/wget --no-check-certificate -O /dev/null -o /dev/null --quiet 'https://smurf.xname.se:4443/dbwrite?jobtype=autopostinstall&sha1=0c0e8f420a05d1d5cf8200833d6ae4bb5761081c'
 
 [Install]
 WantedBy=multi-user.target
