@@ -17,8 +17,8 @@ use lib $path;
 use Jrecdb;
 
 my(%defaults) = (
-   logdir => "/tmp/loggy.d/autopostinstall/2020/04/12",
-	url => 'https://smurf.xname.se:4443/dbread?jobtype=autopostinstall&sha1=bepa',
+   logdir => "/tmp/loggy.d/autoprodinstall/2020/04/12",
+	url => 'https://smurf.xname.se:4443/dbread?jobtype=autoprodinstall&sha1=bepa',
 );
 
 my(%args) = Jrecdb::getopt(\%defaults);

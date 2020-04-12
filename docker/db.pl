@@ -22,7 +22,7 @@ use Digest::MD5 qw(md5_hex);
 
 my(@encryption_methods) = ( "sha1", "md5" );
 
-my($debug) = 0;
+my($debug) = 1;
 {
 	my $fh = undef;
 

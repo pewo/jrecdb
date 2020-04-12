@@ -56,29 +56,28 @@ use File::Copy;
 use File::Basename;
 use File::Temp;
 use Getopt::Long;
-use IO::Socket::SSL;
 use JSON;
-use URI;
-use LWP::UserAgent;
-use File::Path qw(make_path);
-
 
 our $VERSION = 'v0.0.1';
 our @ISA = qw(Object);
 our $debug = 0;
 
 sub new {
-   my $proto = shift;
-   my $class = ref($proto) || $proto;
-   my $self  = {};
-   bless($self,$class);
+        my $proto = shift;
+        my $class = ref($proto) || $proto;
+        my $self  = {};
+        bless($self,$class);
 
 	my($jobtype) = basename($0);
 	$jobtype =~ s/\.pl//;
 
 	my(%defaults) = ( 
 		jobtype		=> $jobtype,
-		debug			=> $debug,
+		ansible		=> "ansible-playbook",
+		jobdir		=> "/var/tmp/job.d",
+		tmpdir		=> "/tmp/job.d",
+		ignoredone	=> 0,
+		debug		=> $debug,
 	);
 	my(%hash) = ( %defaults, @_) ;
 	$self->set("debug",$hash{debug});
@@ -99,8 +98,33 @@ sub new {
 			croak("Bad value for jobtype: $value\n");
 		}
 
+		#
+		# donedir includes jobdir 
+		#
+		my($donedir) = $self->get("jobdir") . "/done";
+		if ( ! -d $donedir ) {
+			make_path($donedir, { verbose => 1, mode => 0755, });
+		}
+		unless ( -d $donedir ) {
+			croak("Can't create donedir $donedir\n");
+		}
+		$self->set("donedir",$donedir);
+
+		# 
+		# check for tmpdir
+		#
+		$value = $self->get("tmpdir");
+		if ( ! -d $value ) {
+			make_path($value, { verbose => 1, mode => 0755, });
+		}
+		if ( ! -d $value ) {
+			croak("Can't create tmpdir $value\n");
+		}
+
+
 	}
-	return($self);
+
+        return($self);
 }
 
 sub debug() {
@@ -128,115 +152,55 @@ sub debug() {
 	}
 }
 
-sub doit() {
-	my($self) = shift;
-
-	my($job);
-	foreach $job ( $self->collect() ) {
-		$self->dojob($job);
-	}
-}
-
 sub dojob() {
 	my($self) = shift;
-	my($job) = shift;
-
-	print Dumper($self);
-	print Dumper($job);
-	
-	my($client) = $job->{"client"};
-	return(undef) unless ( defined($client) );
-
 	my($jobtype) = $self->get("jobtype");
 	my($tmpdir) = $self->get("tmpdir");
-	my($logdir) = $self->get("logdir");
 
-
-	unless ( defined($logdir) ) {
-		$logdir = File::Temp->newdir();
-		$self->debug(1,"logdir: $logdir");
-	}
-	unless ( defined($tmpdir) ) {
-		$tmpdir = File::Temp->newdir();
-		$self->debug(1,"tmpdir: $tmpdir");
-	}
-
-	foreach ( $logdir, $tmpdir ) {
-		next unless ( defined($_) );
-		if ( ! -d $_ ) {
-			$self->debug(1,"mkdir($_)");
-      	make_path($_, { verbose => 1, mode => 0700 } );
-			if ( ! -d $_ ) {
-				chdir($_);
-				$self->debug(1,"chdir($_): $!");
-				print "chdir($_): $!\n";
-				return();
-			}
+	my($log) = $self->get("log");
+	my($fh) = undef;
+	if ( defined($log) ) {
+		if ( open($fh,">",$log) ) {
+			$self->debug(1,"Created log at $log");
+		}
+		else {
+			$self->debug(1,"Writing to $log: $!");
 		}
 	}
-
-	my $log = File::Temp->new(
-     TEMPLATE => "$jobtype.XXXXX",
-     DIR => $logdir,
-     SUFFIX => ".log",
-     UNLINK => 0,
-	);
-	$self->debug(1,"Created log at " . $log->filename);
-
 	my $inv = File::Temp->new(
-     TEMPLATE => "$jobtype.XXXXX",
-     DIR => $tmpdir,
-     SUFFIX => ".inventory",
-     UNLINK => 1,
-   );
+                TEMPLATE => "$jobtype.XXXXX",
+                DIR => $tmpdir,
+                SUFFIX => ".inventory",
+                UNLINK => 1,
+        );
 	my($inventory) = $inv->filename;
-	$self->debug(1,"Creating inventory at $inventory\n");
 
 	my($start) = time;
-	print $log "Starting $0 at " . localtime($start) . "\n" if ( $log );
+	print $fh "Starting $0 at " . localtime($start) . "\n" if ( $fh );
+
+	$self->debug(1,"Creating inventory at $inventory\n");
 
 	print $inv "[$jobtype]\n";
 
-	if ( $log ) {
-		print $log "\nInventory at $inventory\n";
-		print $log "[$jobtype]\n";
+	if ( $fh ) {
+		print $fh "\nInventory at $inventory\n";
+		print $fh "[$jobtype]\n";
 	}
-	print $inv $client . "\n";
-	print $log $client . "\n" if ( $log );
+	foreach ( @_ ) {
+		chomp;
+		print $inv $_ . "\n";
+		print $fh $_ . "\n" if ( $fh );
+	}
 	close($inv);
 
 	my($ansible) = $self->get("ansible");
-	if ( ! -x $ansible ) {
-		print "$ansible is not executable\n";
-		$self->debug(1,"$ansible is not executable");
-		return(undef);
-	}
-	my($cmd) = "$ansible ";
+	my($cmd) = "$ansible -i $inventory";
 
-	if ( $log ) {
-		print $log "\nCommand:\n";
-		print $log $cmd . "\n";
+	if ( $fh ) {
+		print $fh "\nCommand:\n";
+		print $fh $cmd . "\n";
 	}
 	$self->debug(1,$cmd);
-
-	# populate environment variables
-	foreach ( keys(%ENV) ) {
-		if ( $_ =~ /^JRECDB/ ) {
-			delete($ENV{$_});
-			$self->debug(1,"Removing ENV $_");
-		}
-	}
-	foreach ( sort keys %$job ) {
-		my($val) = $job->{$_};
-		my($var) = "JRECDB_" . uc($_);
-		$ENV{$var}=$val;
-		$self->debug(1,"Setting ENV $var=$val");
-	}
-	$self->debug(1,"Setting ENV JRECDB_INVENTORY=$inventory");
-	$ENV{JRECDB_INVENTORY} = $inventory;
-	$self->debug(1,"Setting ENV JRECDB_PROGRAM=$ansible");
-	$ENV{JRECDB_PROGRAM}= $ansible;
-
 
 	#
 	# Save STDOUT and STDERR
@@ -244,9 +208,9 @@ sub dojob() {
 	open (my $OLD_STDOUT, '>&', STDOUT);	
 	open (my $OLD_STDERR, '>&', STDERR);	
 
-	if ( $log ) {
-		print $log "\n--- Output start ---\n\n";
-		close($log);
+	if ( $fh ) {
+		print $fh "\n--- Output start ---\n\n";
+		close($fh);
 		# reassign STDOUT, STDERR
 		open (STDOUT, '>>', $log);
 		open (STDERR, '>>', $log);
@@ -256,7 +220,6 @@ sub dojob() {
 	# run some other code. STDOUT/STDERR are now redirected to log file
 	# ...
 
-
 	system($cmd);
 
 	# done, restore STDOUT/STDERR
@@ -264,7 +227,7 @@ sub dojob() {
 	open (STDERR, '>&', $OLD_STDERR);
 
 	if ( defined($log) ) {
-		if ( open($log,">>",$log) ) {
+		if ( open($fh,">>",$log) ) {
 			$self->debug(1,"Appending log at $log");
 		}
 		else {
@@ -272,14 +235,105 @@ sub dojob() {
 		}
 	}
 
-	if ( $log ) {
-		print $log "\n--- Output end ---\n";
+	if ( $fh ) {
+		print $fh "\n--- Output end ---\n";
 		my($runtime) = time - $start;
-		print $log "\nRuntime: $runtime seconds\n";
-		print $log "\nDone $0 at " . localtime(time) . "\n";
-		close($log);
+		print $fh "\nRuntime: $runtime seconds\n";
+		print $fh "\nDone $0 at " . localtime(time) . "\n";
+		close($fh);
 	}
 	exit(0);
+}
+
+sub checkjob() {
+	my($self) = shift;
+	my($jobdir) = $self->get("jobdir");
+	my($jobtype) = $self->get("jobtype");
+	my($client) = $self->get("client");
+	return(undef) unless ( $client );
+
+	my($job) = $jobdir . "/cmd." . $client . "." . $jobtype;
+	$self->debug(1, "Check if there is a $jobtype job for $client in $jobdir");
+	if ( -r $job ) {
+		$self->debug(1,"Found job $job");
+	}
+	else {
+		$self->debug(1,"Could not find job $job");
+	}
+	return( -r $job );
+}
+
+
+
+sub getjob() {
+	my($self) = shift;
+
+	my($jobdir) = $self->get("jobdir");
+	my($jobtype) = $self->get("jobtype");
+	my($donedir) = $self->get("donedir");
+	my($ignoredone) = $self->get("ignoredone");
+	my($client) = $self->get("client");
+	my($force) = $self->get("force");
+
+	unless ( defined($client) ) {
+		$client = "*";
+	}
+
+	$self->debug(1,"Searching for jobs: $jobdir/client.$client.$jobtype.cmd");
+	my($job);
+	foreach $job ( <$jobdir/client.$client.$jobtype.cmd> ) {
+		$self->debug(1,"job: $job");
+
+		my($done) = $donedir . "/" . basename($job);
+		$self->debug(1, "done: $done");
+		unless ( $ignoredone or $force ) {
+			if ( -r $done ) {
+				print "Client has already initiated an $jobtype\n";
+				unlink($job);
+				next;
+			}
+		}
+	
+		my(%job) = ();
+		if ( open(my $fh,"<",$job) ) {
+			my $line;
+			$line = <$fh>;
+			close($fh);
+			next unless ( defined($line) );
+			my $json = JSON->new->allow_nonref;
+			my $perl_scalar = $json->decode( $line );
+			next unless ( defined($perl_scalar) );
+
+			foreach ( sort keys %$perl_scalar ) {
+				$job{$_} = $perl_scalar->{$_};
+				$self->debug(1,"Setting key [$_] to [$perl_scalar->{$_}]");
+			}
+			$self->debug(1,"move($job, $done)");
+			move($job,$done);
+		}
+		my($cmd) = $job{command};
+		unless ( $cmd ) {
+			print "Missing command in $job\n";
+			next;
+		}
+		unless ( $cmd eq $jobtype ) {
+			print "This is $cmd which is not an $jobtype job\n";
+			next;
+		}
+		$self->debug(1, "cmd: $cmd");
+	
+		my($client) = $job{client};
+		unless ( $client ) {
+			print "Missing client in $job\n";
+			next;
+		}
+
+		my($log) = $done . ".log";
+		$self->set("log",$log);
+		$self->debug(1, "client: $client");
+	
+		$self->dojob($client);
+	}
 }
 
 sub getopt {
@@ -289,8 +343,9 @@ sub getopt {
 	my($localdebug) = undef;
 	GetOptions (
         	"ansible=s" => \$defaults->{ansible},
-        	"url=s" => \$defaults->{url},
+        	"client=s" => \$defaults->{client},
         	"debug:i"  => \$localdebug,
+        	"ignoredone" => \$defaults->{ignoredone},
         	"force" => \$defaults->{force},
 	) or die("Error in command line arguments\n");
 
@@ -316,15 +371,27 @@ sub getopt {
 	return(%args);
 }
 
+sub doit() {
+	my($self) = shift;
+	my($rc) = 0;
+	my($client) = $self->get("client");
+	if ( defined($client) ) {
+		if ( $self->checkjob() ) {
+			$rc = $self->getjob();
+		}
+	}
+	else {
+		$rc = $self->getjob();
+	}
+	return($rc);
+}
+	
 sub collect() {
 	my($self) = shift;
-	my($url) = $self->get("url");
-	my($nocert) = $self->get("nocert");
+	my(%args) = @_;
 
-	unless ( defined($url) )  {
-		$self->debug(1,"Missing url...");
-		print "Missing url\n";
-		return(undef);
+	unless ( $args{url} ) {
+		die "Missing url\n$usage\n";
 	}
 	my($uri) = URI->new($url);
 	return(undef) unless ( defined($uri) );
@@ -336,7 +403,7 @@ sub collect() {
    my($bot) = undef;
 	if ( $scheme eq "https" ) {
 
-		if ( defined($nocert) ) {
+		if ( $args{nocert} ) {
 			$ENV{PERL_LWP_SSL_VERIFY_HOSTNAME} = 0;
 		}
 		$bot = LWP::UserAgent->new( 
@@ -359,8 +426,7 @@ sub collect() {
 	return(undef) unless ( $bot );
 	my $response = $bot->get($url);
 	unless ($response->is_success) {
-		print  $response->status_line;
-		$self->debug(1,$response->status_line);
+		die $response->status_line;
 	}
 
 	my($content) = $response->decoded_content();
@@ -368,8 +434,7 @@ sub collect() {
 
 	my($line);
 	my($added) = 0;
-
-	my(@jobs) = ();
+	my(%local) = ();
 
 	foreach $line ( split(/\n|\r/,$content ) ) {
 		next unless ( $line );
@@ -383,29 +448,27 @@ sub collect() {
 		print "JSON: " . Dumper(\$perl_scalar) . "\n" if ( $debug );
 
 
-		my(%job) = ();
 		my($client) = $perl_scalar->{client};
 		next unless ( defined($client) );
 		next unless ( $client =~ /^\d+\.\d+\.\d+\.\d+$/ );
 		print "client:$client\n" if ( $debug );
-		$job{client} = $perl_scalar->{client};
+		$local{client} = $perl_scalar->{client};
 		delete($perl_scalar->{client});
 	
 		my($time) = $perl_scalar->{time};
 		next unless ( defined($time) );
 		next unless ( $time =~ /^\d+$/ );
 		print "time:$time\n" if ( $debug );
-		$job{time} = $perl_scalar->{time};
+		$local{time} = $perl_scalar->{time};
 		delete($perl_scalar->{time});
 
 		foreach ( sort keys %$perl_scalar ) {
-			$job{$_}=$perl_scalar->{$_};
+			$local{$_}=$perl_scalar->{$_};
 		}
-		$job{localtime}=time;
-		push(@jobs,\%job);
+		$local{localtime}=time;
 	}
-
-	return(@jobs);
+	return(undef) unless ( defined($local{client}) );
+	return(\%local);
 }
 
 1;
