@@ -37,6 +37,34 @@ The url in the autopostinstall.pl is 'https://"dockerhost-ip-address":4443/dbrea
 
 The jobtype is the same as in the service file "autopostinstall"
 
+The autopostinstall.pl will create an temporary inventory file and execute autopostinstall.pl.sh for each client it finds on the jrecdb server.
+
+An example of autopostinstall.pl.sh
+
+<PRE>
+#!/bin/sh
+
+echo "Starting $0"
+echo "Env"
+env | grep ^JRECDB
+echo "Args: $*"
+
+for playbook in postinstall.yml site.yml prodinstall.yml; do
+   ANSIBLE_PLAYBOOK="ansible-playbook $playbook ";
+
+   if [ ! -z ${JRECDB_INVENTORY} ]; then
+      ANSIBLE_PLAYBOOK="$ANSIBLE_PLAYBOOK -i $JRECDB_INVENTORY"
+   fi
+
+   if [ ! -z ${JRECDB_CLIENT} ]; then
+      ANSIBLE_PLAYBOOK="$ANSIBLE_PLAYBOOK -l $JRECDB_CLIENT"
+   fi
+   eval $ANSIBLE_PLAYBOOK
+done
+
+echo "Done $0"
+</PRE>
+
 ## Detailed output
 autopostinstall.pl --debug
 
