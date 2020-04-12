@@ -1,5 +1,7 @@
 # Examples
 
+# On the client
+
 On a systemd client machine you can install the "autopostinstall.service"
 This will on every boot update the data on the Jrecdb server.
 Please change the IP address in this service file
@@ -21,4 +23,17 @@ ExecStart=-/usr/bin/wget --no-check-certificate -O /dev/null -o /dev/null --quie
 [Install]
 WantedBy=multi-user.target
 </PRE>
+
+
+# On some server ( i.e. ansible... )
+
+Execute the autopostinstall.pl script. This script will try to download the data written by the client above.
+The entry above is password protected by sha1, so the autopostinstall.pl has to have the cleartext version of the sha1.
+The cleartext of the sha1 "0c0e8f420a05d1d5cf8200833d6ae4bb5761081c" is "mmGynTGXHa99SDUg"
+
+The url in the autopostinstall.pl is 'https://"dockerhost-ip-address":4443/dbread?jobtype=autopostinstall&remove=1&sha1=mmGynTGXHa99SDUg'
+
+
+The jobtype is the same as in the service file "autopostinstall"
+
 
